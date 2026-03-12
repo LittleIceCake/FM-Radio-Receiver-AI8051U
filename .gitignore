@@ -11,10 +11,27 @@ firmware/Listings/
 firmware/*.hex
 firmware/*.bin
 firmware/*.elf
+firmware/*.axf
+firmware/*.lib
+firmware/*.obj
+
+# Keil 项目文件
+*.uvgui.*
+*.uvopt
+*.uvoptx
+*.dep
+*.d43
+*.lnp
 
 # 系统文件
 .DS_Store
 Thumbs.db
+desktop.ini
 
-*.uvgui.*
-*.uvopt
+# 日志文件
+*.log
+
+# 临时文件
+*.tmp
+*.bak
+*.orig
