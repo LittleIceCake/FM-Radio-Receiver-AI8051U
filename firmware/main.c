@@ -11,47 +11,27 @@
 #include "string.h"
 #include "RTC.h"
 
-/* 不建议这样使用 建议重构 */
-extern u8 Time_Data[];
-extern bit B1S_Flag;
-extern u8 Mode_Set;
-extern u16 Freq_data[]; 
-extern u8 Vol; 
-extern u8 Band; 
-extern u8 Space; 
-extern u8 SI;  
-extern u8 Channel_Num;
-extern float Channel_Freq[] ;
-
-u8 Key_Vel = 0;//按键变量 0：未按下 1-6依次为从左至右按键P1.4 P1.3 P1.2 P0.1 P0.2 P0.3
+u8 Key_Vel = 0;
 u8 Timer_Updata_Value = 0;
-u8 code Timer_Updata_Value_P = 200;//定时器计数值 到 200ms时进行刷新
+u8 code Timer_Updata_Value_P = 200;
 bit SI_Flag;
 
 void GPIO_config(){
-    GPIO_InitTypeDef GPIO_InitStructure;//结构定义
-    EAXSFR();		/* 扩展寄存器访问使能 */
+    GPIO_InitTypeDef GPIO_InitStructure;
+    EAXSFR();
     
-    /* 为方便使用 在此处将所有引脚先初始化 工程中不建议 */
     P0M1 = 0; P0M0 = 0;
     P1M1 = 0; P1M0 = 0;
     P2M1 = 0; P2M0 = 0;
     P3M1 = 0; P3M0 = 0;
-    P4M1 = 0; P4M0 = 0;
-    P5M1 = 0; P5M0 = 0;
-    P6M1 = 0; P6M0 = 0;
-    P7M1 = 0; P7M0 = 0;
     
-    //串口引脚
-	GPIO_InitStructure.Pin  = GPIO_Pin_0 | GPIO_Pin_1;		//指定要初始化的IO, GPIO_Pin_0 ~ GPIO_Pin_7
-	GPIO_InitStructure.Mode = GPIO_PullUp;	//指定IO的输入或输出方式,GPIO_PullUp,GPIO_HighZ,GPIO_OUT_OD,GPIO_OUT_PP
-	GPIO_Inilize(GPIO_P3,&GPIO_InitStructure);	//初始化
+    GPIO_InitStructure.Pin  = GPIO_Pin_0 | GPIO_Pin_1;
+    GPIO_InitStructure.Mode = GPIO_PullUp;
+    GPIO_Inilize(GPIO_P3,&GPIO_InitStructure);
     
-    //I2C引脚
-	GPIO_InitStructure.Pin  = GPIO_Pin_3 | GPIO_Pin_4;		//指定要初始化的IO,
-	GPIO_InitStructure.Mode = GPIO_OUT_OD;	//指定IO的输入或输出方式,GPIO_PullUp,GPIO_HighZ,GPIO_OUT_OD,GPIO_OUT_PP
-	GPIO_Inilize(GPIO_P2, &GPIO_InitStructure);//初始化
-    
+    GPIO_InitStructure.Pin  = GPIO_Pin_3 | GPIO_Pin_4;
+    GPIO_InitStructure.Mode = GPIO_OUT_OD;
+    GPIO_Inilize(GPIO_P2, &GPIO_InitStructure);
     
     P0IM0=0x00;
     P0IM1=0x00;
@@ -113,66 +93,76 @@ void GET_UART1_RECV(){
     command_table[5].action((char *)RX1_Buffer);  // 默认执行未知命令处理
 } 
 
-/* 按键响应 建议单独封装*/
-void Key_Event(){ //按键响应
-    float temp1 = 0;
+static void update_freq_data(float freq) {
+    Freq_data[0] = (u16)freq;
+    Freq_data[1] = (u16)((freq-(u16)freq)*1000+0.5);
+    Freq_UI_Update();
+}
+
+static void handle_mode_freq(int direction) {
+    float temp1 = direction > 0 ? CHAN_ADD(1) : CHAN_SUB(1);
+    update_freq_data(temp1);
+}
+
+static void handle_mode_vol(int direction) {
+    if(direction > 0) {
+        Vol_Add(&Vol);
+    } else {
+        Vol_Sub(&Vol);
+    }
+    Vol_UI_Update();
+}
+
+static void handle_mode_space(int direction) {
+    if(direction > 0) {
+        if(++Space > 4)Space = 0;
+    } else {
+        if(--Space > 250)Space = 4;
+    }
+    Space_Switch(Space);
+    Space_UI_Update();
+}
+
+static void handle_mode_band(int direction) {
+    if(direction > 0) {
+        if(++Band > 5)Band = 0;
+    } else {
+        if(--Band > 250)Band = 5;
+    }
+    Band_Switch(Band);
+    Band_UI_Update();
+    Freq_UI_Update();
+}
+
+static void handle_mode_operation(int direction) {
+    switch(Mode_Set){
+        case 1:
+            handle_mode_freq(direction);
+        break;
+        case 2:
+            handle_mode_vol(direction);
+        break;
+        case 3:
+            handle_mode_space(direction);
+        break;
+        case 4:
+            handle_mode_band(direction);
+        break;
+    }
+}
+
+void Key_Event(){
     if(Key_Vel){
         switch(Key_Vel){
             case 1:
-                switch(Mode_Set){
-                    case 1://频率设置
-                        temp1 = CHAN_SUB(1);
-                        Freq_data[0] = (u16)temp1;
-                        Freq_data[1] = (u16)((temp1-(u16)temp1)*1000+0.5);
-                        Freq_UI_Update();
-                        temp1 = 0;
-                    break;
-                    case 2://音量设置
-                        Vol_Sub(&Vol);
-                        Vol_UI_Update();
-                    break;
-                    case 3://步进设置
-                        if(--Space > 250)Space = 4;
-                        Space_Switch(Space);
-                        Space_UI_Update();
-                    break;
-                    case 4://频带设置
-                        if(--Band > 250)Band = 5;
-                        Band_Switch(Band);
-                        Band_UI_Update();
-                        Freq_UI_Update();
-                    break;
-                }
+                handle_mode_operation(-1);
             break;
             case 2:
                 if(++Mode_Set==5)Mode_Set=0;
                 SET_UI_Update();
             break;
             case 3:
-                switch(Mode_Set){
-                    case 1://频率设置
-                        temp1 = CHAN_ADD(1);
-                        Freq_data[0] = (u16)temp1;
-                        Freq_data[1] = (u16)((temp1-(u16)temp1)*1000+0.5);
-                        Freq_UI_Update();
-                        temp1 = 0;
-                    break;
-                    case 2://音量设置
-                        Vol_Add(&Vol);
-                        Vol_UI_Update();
-                    break;
-                    case 3://步进设置
-                        if(++Space > 4)Space = 0;
-                        Space_Switch(Space);
-                        Space_UI_Update();
-                    break;
-                    case 4://频带设置
-                        if(++Band > 5)Band = 0;
-                        Band_Switch(Band);
-                        Band_UI_Update();
-                        Freq_UI_Update();
-                    break;
-                }
+                handle_mode_operation(1);
             break;
             case 4:
                 if(--Channel_Num < 1) Channel_Num = 1;
@@ -181,18 +171,13 @@ void Key_Event(){ //按键响应
             case 5:
                 SET_Freq(Channel_Freq[Channel_Num-1]);
                 delay_ms(10);
-                temp1 = Get_Freq();
-                Freq_data[0] = (u16)temp1;
-                Freq_data[1] = (u16)((temp1-(u16)temp1)*1000+0.5);
-                Freq_UI_Update();
-                temp1 = 0;
+                update_freq_data(Get_Freq());
             break;
             case 6:
                 if(++Channel_Num > Channel_Freq_Lenth) Channel_Num = Channel_Freq_Lenth;
                 Channel_UI_Update(Channel_Num);
             break;
         }
-        
         Key_Vel =0;
     }
 }
@@ -267,54 +252,32 @@ void Timer0_Isr(void) interrupt 1
 }
 
 
-/* 扩展中断函数（P0中断 P1中断 RTC中断） */
+static void check_key_press(unsigned char intf, unsigned char mask, unsigned char pin, u8 key_value) {
+    if(intf & mask && pin == 0) {
+        delay_ms(20);
+        Key_Vel = key_value;
+        delay_ms(20);
+    }
+}
+
 void common_isr()interrupt 13{
     unsigned char intf1;
     unsigned char intf2;
     delay_ms(100);
     intf1=P0INTF;
-    /*P0中断*/
     if(intf1){
         P0INTF = 0x00;
-        if(intf1&0x02&&P01==0){ //P0.1
-            delay_ms(20);
-            Key_Vel = 4;
-            delay_ms(20);
-        }
-        if(intf1&0x04&&P02==0){ //P0.2
-            delay_ms(20);
-            Key_Vel = 5;
-            delay_ms(20);
-            
-        }
-        if(intf1&0x08&&P03==0){ //P0.3
-            delay_ms(20);
-            Key_Vel = 6;
-            delay_ms(20);
-        }
+        check_key_press(intf1, 0x02, P01, 4);
+        check_key_press(intf1, 0x04, P02, 5);
+        check_key_press(intf1, 0x08, P03, 6);
     }
-    /*P1中断*/
     intf2=P1INTF;
     if(intf2){
         P1INTF = 0x00;
-        if(intf2&0x04&&P12==0){ //P1.2
-            delay_ms(20);
-            Key_Vel = 3;
-            delay_ms(20);
-            
-        }
-        if(intf2&0x08&&P13==0){ //P1.3
-            delay_ms(20);
-            Key_Vel = 2;
-            delay_ms(20);
-        }
-        if(intf2&0x10&&P14==0){ //P1.4
-            delay_ms(20);
-            Key_Vel = 1;
-            delay_ms(20);
-        }
+        check_key_press(intf2, 0x04, P12, 3);
+        check_key_press(intf2, 0x08, P13, 2);
+        check_key_press(intf2, 0x10, P14, 1);
     }
-    /* RTC中断 */
     if(RTCIF&0x08){
         RTCIF &= ~0x08;
         B1S_Flag =1;
